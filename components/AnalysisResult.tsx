@@ -18,30 +18,30 @@ export default function AnalysisResult({ data }: AnalysisResultProps) {
 
       {/* Cards de informação */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="card-medical">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-100 rounded-lg">
+        <div className="card-medical min-h-[120px]">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
               <Layers className="w-4 h-4 text-blue-600" />
             </div>
             <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
               Estrutura
             </span>
           </div>
-          <p className="text-lg font-semibold text-slate-800">
+          <p className="text-base font-semibold text-slate-800 leading-snug break-words hyphens-auto">
             {data.estrutura_colapsada}
           </p>
         </div>
 
-        <div className="card-medical">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-purple-100 rounded-lg">
+        <div className="card-medical min-h-[120px]">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-purple-100 rounded-lg flex-shrink-0">
               <Activity className="w-4 h-4 text-purple-600" />
             </div>
             <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
               Padrão
             </span>
           </div>
-          <p className="text-lg font-semibold text-slate-800">
+          <p className="text-base font-semibold text-slate-800 leading-snug break-words hyphens-auto">
             {data.padrao_colapso}
           </p>
         </div>

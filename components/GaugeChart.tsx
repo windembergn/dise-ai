@@ -10,21 +10,15 @@ interface GaugeChartProps {
 export default function GaugeChart({ value, label = 'Grau de Obstrução' }: GaugeChartProps) {
   const [animatedValue, setAnimatedValue] = useState(0)
 
-  // Animação suave do valor
   useEffect(() => {
     const duration = 1500
     const startTime = Date.now()
-    const startValue = 0
 
     const animate = () => {
       const elapsed = Date.now() - startTime
       const progress = Math.min(elapsed / duration, 1)
-
-      // Easing function (ease-out)
       const easeOut = 1 - Math.pow(1 - progress, 3)
-      const currentValue = startValue + (value - startValue) * easeOut
-
-      setAnimatedValue(currentValue)
+      setAnimatedValue(easeOut * value)
 
       if (progress < 1) {
         requestAnimationFrame(animate)
@@ -35,48 +29,28 @@ export default function GaugeChart({ value, label = 'Grau de Obstrução' }: Gau
   }, [value])
 
   // Configurações do gauge
-  const size = 240
-  const strokeWidth = 20
+  const size = 200
+  const strokeWidth = 18
   const radius = (size - strokeWidth) / 2
   const center = size / 2
 
-  // Arco de 180 graus (semicírculo)
-  const startAngle = 180
-  const angleRange = 180
+  // Circunferência do semicírculo
+  const circumference = Math.PI * radius
 
-  // Calcular o ângulo atual baseado no valor
-  const currentAngle = startAngle - (animatedValue / 100) * angleRange
-
-  // Converter ângulos para coordenadas
-  const polarToCartesian = (angle: number) => {
-    const angleInRadians = (angle * Math.PI) / 180
-    return {
-      x: center + radius * Math.cos(angleInRadians),
-      y: center - radius * Math.sin(angleInRadians),
-    }
+  // Calcular o offset baseado no valor (0-100)
+  const getStrokeDashoffset = (val: number) => {
+    return circumference - (val / 100) * circumference
   }
 
-  // Path do arco de valor (segmentado por cores)
-  const createArcPath = (start: number, end: number) => {
-    const startP = polarToCartesian(startAngle - (start / 100) * angleRange)
-    const endP = polarToCartesian(startAngle - (end / 100) * angleRange)
-    const largeArc = end - start > 50 ? 1 : 0
-    return `M ${startP.x} ${startP.y} A ${radius} ${radius} 0 ${largeArc} 1 ${endP.x} ${endP.y}`
-  }
+  // Rotação do ponteiro (de -90 a 90 graus)
+  const pointerRotation = -90 + (animatedValue / 100) * 180
 
   // Determinar cor baseada no valor
   const getColor = (val: number) => {
-    if (val <= 50) return '#22c55e' // Verde
-    if (val <= 75) return '#f59e0b' // Amarelo/Laranja
-    return '#dc2626' // Vermelho
+    if (val <= 50) return '#22c55e'
+    if (val <= 75) return '#f59e0b'
+    return '#dc2626'
   }
-
-  // Criar segmentos de cor
-  const segments = [
-    { start: 0, end: 50, color: '#dcfce7' },
-    { start: 50, end: 75, color: '#fef3c7' },
-    { start: 75, end: 100, color: '#fee2e2' },
-  ]
 
   // Determinar classificação
   const getClassification = (val: number) => {
@@ -90,65 +64,75 @@ export default function GaugeChart({ value, label = 'Grau de Obstrução' }: Gau
 
   return (
     <div className="flex flex-col items-center">
-      <svg width={size} height={size / 2 + 40} viewBox={`0 0 ${size} ${size / 2 + 40}`}>
-        {/* Segmentos de fundo coloridos */}
-        {segments.map((segment, index) => (
-          <path
-            key={index}
-            d={createArcPath(segment.start, segment.end)}
-            fill="none"
-            stroke={segment.color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-          />
-        ))}
+      <svg width={size} height={size / 2 + 30} viewBox={`0 0 ${size} ${size / 2 + 30}`}>
+        {/* Segmento Verde (0-50%) */}
+        <path
+          d={`M ${strokeWidth / 2} ${center} A ${radius} ${radius} 0 0 1 ${center} ${strokeWidth / 2}`}
+          fill="none"
+          stroke="#dcfce7"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
 
-        {/* Arco de valor */}
-        {animatedValue > 0 && (
-          <path
-            d={createArcPath(0, Math.min(animatedValue, 100))}
-            fill="none"
-            stroke={getColor(animatedValue)}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            style={{
-              filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))',
-            }}
-          />
-        )}
+        {/* Segmento Amarelo (50-75%) */}
+        <path
+          d={`M ${center} ${strokeWidth / 2} A ${radius} ${radius} 0 0 1 ${center + radius * Math.cos(Math.PI / 4)} ${center - radius * Math.sin(Math.PI / 4)}`}
+          fill="none"
+          stroke="#fef3c7"
+          strokeWidth={strokeWidth}
+          strokeLinecap="butt"
+        />
+
+        {/* Segmento Vermelho (75-100%) */}
+        <path
+          d={`M ${center + radius * Math.cos(Math.PI / 4)} ${center - radius * Math.sin(Math.PI / 4)} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${center}`}
+          fill="none"
+          stroke="#fee2e2"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+
+        {/* Arco de progresso */}
+        <path
+          d={`M ${strokeWidth / 2} ${center} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${center}`}
+          fill="none"
+          stroke={getColor(animatedValue)}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={getStrokeDashoffset(animatedValue)}
+          style={{
+            transition: 'stroke 0.3s ease',
+          }}
+        />
 
         {/* Ponteiro */}
-        <g transform={`rotate(${-currentAngle + 90}, ${center}, ${center})`}>
-          <polygon
-            points={`${center},${center - radius + strokeWidth + 5} ${center - 6},${center} ${center + 6},${center}`}
-            fill="#1e293b"
+        <g style={{ transform: `rotate(${pointerRotation}deg)`, transformOrigin: `${center}px ${center}px` }}>
+          <line
+            x1={center}
+            y1={center}
+            x2={center}
+            y2={center - radius + strokeWidth + 8}
+            stroke="#1e293b"
+            strokeWidth={3}
+            strokeLinecap="round"
           />
         </g>
 
         {/* Centro do ponteiro */}
-        <circle cx={center} cy={center} r={12} fill="#1e293b" />
-        <circle cx={center} cy={center} r={8} fill="#f8fafc" />
-
-        {/* Valor numérico */}
-        <text
-          x={center}
-          y={center + 35}
-          textAnchor="middle"
-          className="text-3xl font-bold"
-          fill="#1e293b"
-        >
-          {Math.round(animatedValue)}%
-        </text>
+        <circle cx={center} cy={center} r={10} fill="#1e293b" />
+        <circle cx={center} cy={center} r={6} fill="#f8fafc" />
 
         {/* Marcadores */}
-        <text x={20} y={center + 15} textAnchor="start" fontSize="12" fill="#64748b">0</text>
-        <text x={center} y={25} textAnchor="middle" fontSize="12" fill="#64748b">50</text>
-        <text x={size - 20} y={center + 15} textAnchor="end" fontSize="12" fill="#64748b">100</text>
+        <text x={12} y={center + 18} fontSize="11" fill="#64748b" fontWeight="500">0</text>
+        <text x={center} y={18} textAnchor="middle" fontSize="11" fill="#64748b" fontWeight="500">50</text>
+        <text x={size - 12} y={center + 18} textAnchor="end" fontSize="11" fill="#64748b" fontWeight="500">100</text>
       </svg>
 
-      {/* Label */}
-      <div className="text-center -mt-2">
-        <p className="text-sm font-medium text-slate-600">{label}</p>
+      {/* Valor e Label */}
+      <div className="text-center -mt-1">
+        <p className="text-4xl font-bold text-slate-800">{Math.round(animatedValue)}%</p>
+        <p className="text-sm text-slate-500 mt-1">{label}</p>
         <p className={`text-lg font-semibold ${classification.color}`}>
           {classification.text}
         </p>
