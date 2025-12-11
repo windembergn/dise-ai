@@ -8,7 +8,7 @@ import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import type { AnalysisResponse, AnalysisResult } from '@/lib/types'
 
-const MODEL_NAME = 'gemini-1.5-flash-latest'
+const MODEL_NAME = 'gemini-flash-lite-latest'
 
 const SYSTEM_INSTRUCTION = `
 Você é um software médico de precisão para análise de DISE (Drug-Induced Sleep Endoscopy).
