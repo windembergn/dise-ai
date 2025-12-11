@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}
+
+@layer components {
+  .card-medical {
+    @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-6;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-xl
+           transition-all duration-200 flex items-center justify-center gap-2
+           disabled:bg-slate-300 disabled:cursor-not-allowed;
+  }
+
+  .upload-zone {
+    @apply border-2 border-dashed border-slate-300 rounded-2xl p-8
+           hover:border-blue-400 hover:bg-blue-50/50 transition-all duration-300
+           cursor-pointer flex flex-col items-center justify-center gap-4;
+  }
+
+  .upload-zone-active {
+    @apply border-blue-500 bg-blue-50 scale-[1.02];
+  }
+}
+
+/* Animação do gauge */
+@keyframes gauge-fill {
+  from {
+    stroke-dashoffset: 283;
+  }
+}
+
+.gauge-animate {
+  animation: gauge-fill 1.5s ease-out forwards;
+}
