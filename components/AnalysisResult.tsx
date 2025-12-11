@@ -68,7 +68,7 @@ export default function AnalysisResult({ data }: AnalysisResultProps) {
         <div className="mt-4 flex items-center justify-between pt-4 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-500">Nível de Confiança da IA</span>
+            <span className="text-sm text-slate-500">Nível de Confiança</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">

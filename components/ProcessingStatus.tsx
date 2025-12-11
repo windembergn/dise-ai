@@ -24,14 +24,14 @@ const statusConfig = {
   },
   processing: {
     icon: Loader2,
-    text: 'Processando no Google AI...',
+    text: 'Processando vídeo...',
     color: 'text-amber-600',
     bgColor: 'bg-amber-100',
     animate: true,
   },
   analyzing: {
     icon: Cpu,
-    text: 'IA analisando obstrução...',
+    text: 'Analisando obstrução...',
     color: 'text-purple-600',
     bgColor: 'bg-purple-100',
     animate: true,
