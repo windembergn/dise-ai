@@ -173,7 +173,7 @@ export default function Home() {
       <footer className="border-t border-slate-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <p className="text-center text-sm text-slate-400">
-            Powered by Google Gemini AI
+            Powered by Eagle 2025 - Todos os direitos reservados
           </p>
         </div>
       </footer>
