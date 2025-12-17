@@ -8,8 +8,11 @@ import AnalysisResultComponent from '@/components/AnalysisResult'
 import { analyzeVideo, analyzeVideoByUri } from './actions/analyze'
 import type { AnalysisResult, UploadStatus, UploadProgress } from '@/lib/types'
 
-// Limite para uso direto da Server Action (100MB)
-const DIRECT_UPLOAD_LIMIT = 100 * 1024 * 1024
+// Limite para uso direto da Server Action (4MB - seguro para Vercel)
+const DIRECT_UPLOAD_LIMIT = 4 * 1024 * 1024
+
+// Limite máximo do Vercel Pro (50MB)
+const VERCEL_MAX_LIMIT = 50 * 1024 * 1024
 
 // Estimativas de tempo (em segundos) baseadas em execução real
 // Upload 106MB: 42s → 0.4s/MB | Análise 106MB: 26s → base 25s
@@ -137,6 +140,13 @@ export default function Home() {
     const logWithTime = (stage: string, message: string) => {
       const elapsed = ((Date.now() - startTimeRef.current) / 1000).toFixed(1)
       console.log(`[TIMER ${elapsed}s] [${stage}] ${message}`)
+    }
+
+    // Verificar limite do Vercel
+    if (selectedFile.size > VERCEL_MAX_LIMIT) {
+      setStatus('error')
+      setError(`Arquivo muito grande (${fileSizeDisplay}MB). Limite máximo: 50MB. Por favor, comprima o vídeo antes de enviar.`)
+      return
     }
 
     try {

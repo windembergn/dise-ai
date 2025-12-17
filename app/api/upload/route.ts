@@ -5,7 +5,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 
-// Configuração para aceitar arquivos grandes (até 2GB)
+// Configuração para aceitar arquivos grandes
 export const maxDuration = 300 // 5 minutos de timeout
 export const dynamic = 'force-dynamic'
 
