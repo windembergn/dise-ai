@@ -233,11 +233,26 @@ export async function analyzeVideo(formData: FormData): Promise<AnalysisResponse
   } catch (error) {
     console.error('[ANALYZE] Erro na análise:', error)
 
+    let errorMessage = 'Erro desconhecido durante a análise'
+
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('forbidden') || msg.includes('403')) {
+        errorMessage = 'Acesso negado. Verifique se a API Key do Google está válida.'
+      } else if (msg.includes('quota') || msg.includes('rate limit')) {
+        errorMessage = 'Limite de uso da API atingido. Aguarde alguns minutos.'
+      } else if (msg.includes('not valid json') || msg.includes('unexpected token')) {
+        errorMessage = 'Erro de comunicação com o servidor. Tente novamente.'
+      } else if (msg.includes('pattern') || msg.includes('match')) {
+        errorMessage = 'O vídeo não pôde ser analisado. Tente outro vídeo.'
+      } else {
+        errorMessage = error.message
+      }
+    }
+
     return {
       success: false,
-      error: error instanceof Error
-        ? error.message
-        : 'Erro desconhecido durante a análise'
+      error: errorMessage
     }
   } finally {
     // Limpar arquivo temporário
@@ -379,11 +394,26 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem expli
   } catch (error) {
     console.error('[ANALYZE BY URI] Erro:', error)
 
+    let errorMessage = 'Erro desconhecido durante a análise'
+
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('forbidden') || msg.includes('403')) {
+        errorMessage = 'Acesso negado. Verifique se a API Key do Google está válida.'
+      } else if (msg.includes('quota') || msg.includes('rate limit')) {
+        errorMessage = 'Limite de uso da API atingido. Aguarde alguns minutos.'
+      } else if (msg.includes('not valid json') || msg.includes('unexpected token')) {
+        errorMessage = 'Erro de comunicação com o servidor. Tente novamente.'
+      } else if (msg.includes('pattern') || msg.includes('match')) {
+        errorMessage = 'O vídeo não pôde ser analisado. Tente outro vídeo.'
+      } else {
+        errorMessage = error.message
+      }
+    }
+
     return {
       success: false,
-      error: error instanceof Error
-        ? error.message
-        : 'Erro desconhecido durante a análise'
+      error: errorMessage
     }
   }
 }

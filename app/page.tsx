@@ -143,6 +143,7 @@ export default function Home() {
       if (isLargeFile) {
         // Arquivo grande: usa API route para upload direto ao Google AI
         logWithTime('START', `Arquivo grande: ${fileSizeDisplay}MB - usando upload direto`)
+        console.log('[DEBUG] Iniciando upload para /api/upload')
 
         // Fase 1: Upload (0-40%)
         setStatus('uploading')
@@ -156,20 +157,30 @@ export default function Home() {
         // Upload via API route
         abortControllerRef.current = new AbortController()
 
+        console.log('[DEBUG] Fazendo fetch para /api/upload...')
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
           signal: abortControllerRef.current.signal
         })
 
-        if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json()
-          throw new Error(errorData.error || 'Falha no upload')
+        console.log('[DEBUG] Upload response status:', uploadResponse.status)
+        console.log('[DEBUG] Upload response ok:', uploadResponse.ok)
+
+        const uploadResponseText = await uploadResponse.text()
+        console.log('[DEBUG] Upload response raw:', uploadResponseText)
+
+        let uploadResult
+        try {
+          uploadResult = JSON.parse(uploadResponseText)
+          console.log('[DEBUG] Upload result parsed:', uploadResult)
+        } catch (parseError) {
+          console.error('[DEBUG] Erro ao parsear resposta:', parseError)
+          throw new Error(`Resposta inválida do servidor: ${uploadResponseText.substring(0, 100)}`)
         }
 
-        const uploadResult = await uploadResponse.json()
-
-        if (!uploadResult.success) {
+        if (!uploadResponse.ok || !uploadResult.success) {
+          console.error('[DEBUG] Upload falhou:', uploadResult)
           throw new Error(uploadResult.error || 'Falha no upload')
         }
 
@@ -193,6 +204,11 @@ export default function Home() {
         startProgressSimulation(45, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
 
         logWithTime('ANALYZE', 'Iniciando análise...')
+        console.log('[DEBUG] Chamando analyzeVideoByUri com:', {
+          fileUri: uploadResult.fileUri,
+          mimeType: uploadResult.mimeType,
+          fileName: uploadResult.fileName
+        })
 
         // Analisar usando URI
         const response = await analyzeVideoByUri({
@@ -201,6 +217,7 @@ export default function Home() {
           fileName: uploadResult.fileName
         })
 
+        console.log('[DEBUG] Resposta da análise:', response)
         logWithTime('ANALYZE', 'Análise concluída')
 
         // Limpar interval
@@ -278,14 +295,23 @@ export default function Home() {
         clearInterval(progressIntervalRef.current)
       }
 
+      console.error('[DEBUG] Erro capturado:', err)
+      console.error('[DEBUG] Tipo do erro:', err instanceof Error ? err.constructor.name : typeof err)
+      console.error('[DEBUG] Mensagem:', err instanceof Error ? err.message : String(err))
+      console.error('[DEBUG] Stack:', err instanceof Error ? err.stack : 'N/A')
+
       if (err instanceof Error && err.name === 'AbortError') {
-        console.log('[ANALYZE] Upload cancelado pelo usuário')
+        console.log('[DEBUG] Upload cancelado pelo usuário')
         setStatus('idle')
         setUploadProgress({ stage: 'idle', progress: 0, message: '' })
         return
       }
+
+      const errorMsg = err instanceof Error ? err.message : 'Erro ao processar vídeo'
+      console.error('[DEBUG] Erro final exibido:', errorMsg)
+
       setStatus('error')
-      setError(err instanceof Error ? err.message : 'Erro ao processar vídeo')
+      setError(errorMsg)
       setUploadProgress({
         stage: 'error',
         progress: 0,

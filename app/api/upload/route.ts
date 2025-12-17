@@ -92,8 +92,23 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[UPLOAD API] Erro:', error)
 
+    let errorMessage = 'Erro no upload'
+
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('forbidden') || msg.includes('403')) {
+        errorMessage = 'Acesso negado. Verifique se a API Key do Google está válida e tem permissões.'
+      } else if (msg.includes('quota') || msg.includes('rate limit')) {
+        errorMessage = 'Limite de uso da API atingido. Aguarde alguns minutos.'
+      } else if (msg.includes('unauthorized') || msg.includes('401')) {
+        errorMessage = 'API Key inválida. Configure uma chave válida do Google AI.'
+      } else {
+        errorMessage = error.message
+      }
+    }
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro no upload' },
+      { success: false, error: errorMessage },
       { status: 500 }
     )
 
