@@ -5,22 +5,18 @@ import { Stethoscope, Play, RefreshCw } from 'lucide-react'
 import VideoUpload from '@/components/VideoUpload'
 import ProcessingStatus from '@/components/ProcessingStatus'
 import AnalysisResultComponent from '@/components/AnalysisResult'
-import { analyzeVideo, analyzeVideoByUri } from './actions/analyze'
+import { analyzeVideo } from './actions/analyze'
 import type { AnalysisResult, UploadStatus, UploadProgress } from '@/lib/types'
 
 // Limite para uso direto da Server Action (4MB - seguro para Vercel)
 const DIRECT_UPLOAD_LIMIT = 4 * 1024 * 1024
 
-// Limite máximo do Vercel Pro (50MB)
-const VERCEL_MAX_LIMIT = 50 * 1024 * 1024
-
 // Estimativas de tempo (em segundos) baseadas em execução real
-// Upload 106MB: 42s → 0.4s/MB | Análise 106MB: 26s → base 25s
 const TIME_ESTIMATES = {
-  uploadPerMB: 0.4, // ~2.5MB/s de upload (medido: 42s para 106MB)
-  processingPerMB: 0.02, // Tempo de processamento no Google AI
-  analysisBase: 25, // Tempo base para análise com Gemini 2.5 Pro
-  analysisPerMB: 0.02, // Tempo adicional por MB do vídeo
+  uploadPerMB: 0.5, // Upload para GCS
+  processingPerMB: 0.3, // Download GCS + Upload Gemini
+  analysisBase: 30, // Tempo base para análise com Gemini 2.5 Pro
+  analysisPerMB: 0.1, // Tempo adicional por MB do vídeo
 }
 
 export default function Home() {
@@ -57,11 +53,9 @@ export default function Home() {
   }, [])
 
   const handleClear = useCallback(() => {
-    // Cancelar upload em andamento
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
-    // Limpar interval
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current)
       progressIntervalRef.current = null
@@ -77,14 +71,6 @@ export default function Home() {
     setUploadProgress({ stage: 'idle', progress: 0, message: '' })
   }, [videoUrl])
 
-  // Função para calcular tempo estimado total
-  const calculateTotalTime = (fileSizeMB: number): number => {
-    const uploadTime = fileSizeMB * TIME_ESTIMATES.uploadPerMB
-    const processingTime = fileSizeMB * TIME_ESTIMATES.processingPerMB
-    const analysisTime = TIME_ESTIMATES.analysisBase + (fileSizeMB * TIME_ESTIMATES.analysisPerMB)
-    return uploadTime + processingTime + analysisTime
-  }
-
   // Função para simular progresso gradual
   const startProgressSimulation = (
     startProgress: number,
@@ -93,17 +79,16 @@ export default function Home() {
     stage: UploadProgress['stage'],
     message: string
   ) => {
-    // Limpar interval anterior
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current)
     }
 
     const startTime = Date.now()
-    const totalDuration = durationSeconds * 1000 // em ms
+    const totalDuration = durationSeconds * 1000
 
     progressIntervalRef.current = setInterval(() => {
       const elapsed = Date.now() - startTime
-      const progressRatio = Math.min(elapsed / totalDuration, 0.95) // Máximo 95% até confirmação
+      const progressRatio = Math.min(elapsed / totalDuration, 0.95)
       const currentProgress = startProgress + (endProgress - startProgress) * progressRatio
       const remainingTime = Math.max(0, (totalDuration - elapsed) / 1000)
 
@@ -115,7 +100,6 @@ export default function Home() {
         estimatedTimeRemaining: Math.round(remainingTime)
       })
 
-      // Parar quando atingir 95% (vai para 100% quando a operação realmente terminar)
       if (progressRatio >= 0.95) {
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
@@ -134,108 +118,104 @@ export default function Home() {
     const isLargeFile = selectedFile.size > DIRECT_UPLOAD_LIMIT
     const fileSizeMB = selectedFile.size / (1024 * 1024)
     const fileSizeDisplay = fileSizeMB.toFixed(1)
-    const totalEstimatedTime = calculateTotalTime(fileSizeMB)
 
-    // Helper para logs com timestamp
     const logWithTime = (stage: string, message: string) => {
       const elapsed = ((Date.now() - startTimeRef.current) / 1000).toFixed(1)
       console.log(`[TIMER ${elapsed}s] [${stage}] ${message}`)
     }
 
-    // Verificar limite do Vercel
-    if (selectedFile.size > VERCEL_MAX_LIMIT) {
-      setStatus('error')
-      setError(`Arquivo muito grande (${fileSizeDisplay}MB). Limite máximo: 50MB. Por favor, comprima o vídeo antes de enviar.`)
-      return
-    }
-
     try {
       if (isLargeFile) {
-        // Arquivo grande: usa API route para upload direto ao Google AI
-        logWithTime('START', `Arquivo grande: ${fileSizeDisplay}MB - usando upload direto`)
-        console.log('[DEBUG] Iniciando upload para /api/upload')
+        // ========================================
+        // ARQUIVO GRANDE: Upload via GCS
+        // ========================================
+        logWithTime('START', `Arquivo grande: ${fileSizeDisplay}MB - usando GCS`)
+        console.log('[DEBUG] Iniciando fluxo GCS')
 
-        // Fase 1: Upload (0-40%)
+        // Fase 1: Obter URL assinada (0-5%)
         setStatus('uploading')
+        setUploadProgress({
+          stage: 'uploading',
+          progress: 2,
+          message: 'Preparando upload...'
+        })
+
+        console.log('[DEBUG] Obtendo URL assinada...')
+        const signResponse = await fetch('/api/gcs/sign-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: selectedFile.name,
+            contentType: selectedFile.type || 'video/mp4'
+          })
+        })
+
+        if (!signResponse.ok) {
+          const errData = await signResponse.json()
+          throw new Error(errData.error || 'Erro ao preparar upload')
+        }
+
+        const signData = await signResponse.json()
+        console.log('[DEBUG] URL assinada obtida:', signData.fileName)
+        logWithTime('SIGN', 'URL assinada obtida')
+
+        // Fase 2: Upload direto para GCS (5-50%)
         const uploadTime = fileSizeMB * TIME_ESTIMATES.uploadPerMB
-        startProgressSimulation(0, 40, uploadTime, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
+        startProgressSimulation(5, 50, uploadTime, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
 
-        // Criar FormData para API route
-        const formData = new FormData()
-        formData.append('video', selectedFile)
-
-        // Upload via API route
+        console.log('[DEBUG] Fazendo upload para GCS...')
         abortControllerRef.current = new AbortController()
 
-        console.log('[DEBUG] Fazendo fetch para /api/upload...')
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        const uploadResponse = await fetch(signData.signedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': selectedFile.type || 'video/mp4' },
+          body: selectedFile,
           signal: abortControllerRef.current.signal
         })
 
-        console.log('[DEBUG] Upload response status:', uploadResponse.status)
-        console.log('[DEBUG] Upload response ok:', uploadResponse.ok)
-
-        const uploadResponseText = await uploadResponse.text()
-        console.log('[DEBUG] Upload response raw:', uploadResponseText)
-
-        let uploadResult
-        try {
-          uploadResult = JSON.parse(uploadResponseText)
-          console.log('[DEBUG] Upload result parsed:', uploadResult)
-        } catch (parseError) {
-          console.error('[DEBUG] Erro ao parsear resposta:', parseError)
-          throw new Error(`Resposta inválida do servidor: ${uploadResponseText.substring(0, 100)}`)
+        if (!uploadResponse.ok) {
+          throw new Error(`Erro no upload para GCS: ${uploadResponse.status}`)
         }
 
-        if (!uploadResponse.ok || !uploadResult.success) {
-          console.error('[DEBUG] Upload falhou:', uploadResult)
-          throw new Error(uploadResult.error || 'Falha no upload')
-        }
+        console.log('[DEBUG] Upload para GCS concluído')
+        logWithTime('UPLOAD', 'Upload para GCS concluído')
 
-        logWithTime('UPLOAD', `Concluído - arquivo: ${uploadResult.fileName}`)
-
-        // Limpar simulação de upload imediatamente
+        // Limpar simulação
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
         }
 
-        // Fase 2: Análise (40-100%) - pula direto para análise
+        // Fase 3: Análise (50-100%)
         setStatus('analyzing')
         setUploadProgress({
           stage: 'analyzing',
-          progress: 45,
-          message: 'Analisando obstrução...',
-          estimatedTimeRemaining: Math.round(TIME_ESTIMATES.analysisBase + (fileSizeMB * TIME_ESTIMATES.analysisPerMB))
+          progress: 55,
+          message: 'Analisando obstrução...'
         })
 
         const analysisTime = TIME_ESTIMATES.analysisBase + (fileSizeMB * TIME_ESTIMATES.analysisPerMB)
-        startProgressSimulation(45, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
+        startProgressSimulation(55, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
 
-        logWithTime('ANALYZE', 'Iniciando análise...')
-        console.log('[DEBUG] Chamando analyzeVideoByUri com:', {
-          fileUri: uploadResult.fileUri,
-          mimeType: uploadResult.mimeType,
-          fileName: uploadResult.fileName
+        console.log('[DEBUG] Iniciando análise via GCS...')
+        logWithTime('ANALYZE', 'Iniciando análise')
+
+        const analyzeResponse = await fetch('/api/gcs/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: signData.fileName,
+            mimeType: selectedFile.type || 'video/mp4'
+          })
         })
 
-        // Analisar usando URI
-        const response = await analyzeVideoByUri({
-          fileUri: uploadResult.fileUri,
-          mimeType: uploadResult.mimeType,
-          fileName: uploadResult.fileName
-        })
+        const analyzeResult = await analyzeResponse.json()
+        console.log('[DEBUG] Resultado da análise:', analyzeResult)
 
-        console.log('[DEBUG] Resposta da análise:', response)
-        logWithTime('ANALYZE', 'Análise concluída')
-
-        // Limpar interval
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
         }
 
-        if (response.success && response.data) {
+        if (analyzeResult.success && analyzeResult.data) {
           logWithTime('COMPLETE', `Total: ${fileSizeDisplay}MB processado com sucesso`)
           setStatus('complete')
           setUploadProgress({
@@ -243,44 +223,39 @@ export default function Home() {
             progress: 100,
             message: 'Análise concluída!'
           })
-          setResult(response.data)
+          setResult(analyzeResult.data)
         } else {
           setStatus('error')
-          setError(response.error || 'Erro na análise')
+          setError(analyzeResult.error || 'Erro na análise')
         }
 
       } else {
-        // Arquivo pequeno: usa Server Action direta
-        logWithTime('START', `Arquivo pequeno: ${fileSizeDisplay}MB - usando Server Action direta`)
+        // ========================================
+        // ARQUIVO PEQUENO: Server Action direta
+        // ========================================
+        logWithTime('START', `Arquivo pequeno: ${fileSizeDisplay}MB - usando Server Action`)
 
-        // Fase 1: Enviando (0-30%)
         setStatus('uploading')
-        const uploadTime = fileSizeMB * TIME_ESTIMATES.uploadPerMB
-        startProgressSimulation(0, 30, uploadTime, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
+        startProgressSimulation(0, 30, 2, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
 
         const formData = new FormData()
         formData.append('video', selectedFile)
 
-        // Pequena pausa para mostrar upload
         await new Promise(resolve => setTimeout(resolve, 500))
 
-        // Fase 2: Processamento (30-50%)
         setStatus('processing')
-        const processingTime = fileSizeMB * TIME_ESTIMATES.processingPerMB
-        startProgressSimulation(30, 50, processingTime, 'processing', 'Processando vídeo...')
+        startProgressSimulation(30, 50, 2, 'processing', 'Processando vídeo...')
 
-        // Fase 3: Análise (50-100%)
         setStatus('analyzing')
-        const analysisTime = TIME_ESTIMATES.analysisBase + (fileSizeMB * TIME_ESTIMATES.analysisPerMB)
+        const analysisTime = TIME_ESTIMATES.analysisBase
         startProgressSimulation(50, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
 
-        logWithTime('ANALYZE', 'Iniciando análise...')
+        logWithTime('ANALYZE', 'Iniciando análise')
 
         const response = await analyzeVideo(formData)
 
         logWithTime('ANALYZE', 'Análise concluída')
 
-        // Limpar interval
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
         }
@@ -300,25 +275,21 @@ export default function Home() {
         }
       }
     } catch (err) {
-      // Limpar interval em caso de erro
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current)
       }
 
-      console.error('[DEBUG] Erro capturado:', err)
-      console.error('[DEBUG] Tipo do erro:', err instanceof Error ? err.constructor.name : typeof err)
-      console.error('[DEBUG] Mensagem:', err instanceof Error ? err.message : String(err))
-      console.error('[DEBUG] Stack:', err instanceof Error ? err.stack : 'N/A')
+      console.error('[DEBUG] Erro:', err)
 
       if (err instanceof Error && err.name === 'AbortError') {
-        console.log('[DEBUG] Upload cancelado pelo usuário')
+        console.log('[DEBUG] Upload cancelado')
         setStatus('idle')
         setUploadProgress({ stage: 'idle', progress: 0, message: '' })
         return
       }
 
       const errorMsg = err instanceof Error ? err.message : 'Erro ao processar vídeo'
-      console.error('[DEBUG] Erro final exibido:', errorMsg)
+      console.error('[DEBUG] Erro final:', errorMsg)
 
       setStatus('error')
       setError(errorMsg)
