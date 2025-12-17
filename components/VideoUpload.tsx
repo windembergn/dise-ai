@@ -137,7 +137,7 @@ export default function VideoUpload({
           {isDragging ? 'Solte o video aqui' : 'Arraste o video ou clique para selecionar'}
         </p>
         <p className="text-sm text-slate-500 mt-1">
-          MP4, MOV, AVI (max. 100MB)
+          MP4, MOV, AVI - Arquivos grandes serão otimizados automaticamente
         </p>
       </div>
     </div>
