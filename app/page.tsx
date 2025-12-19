@@ -12,11 +12,11 @@ import type { AnalysisResult, UploadStatus, UploadProgress } from '@/lib/types'
 const DIRECT_UPLOAD_LIMIT = 4 * 1024 * 1024
 
 // Estimativas de tempo (em segundos) baseadas em execução real
+// Teste com 106MB: Upload ~10s, Análise ~40s, Total ~50s
 const TIME_ESTIMATES = {
-  uploadPerMB: 0.5, // Upload para GCS
-  processingPerMB: 0.3, // Download GCS + Upload Gemini
-  analysisBase: 30, // Tempo base para análise com Gemini 2.5 Pro
-  analysisPerMB: 0.1, // Tempo adicional por MB do vídeo
+  uploadPerMB: 0.1, // Upload para GCS (~10s para 106MB)
+  analysisBase: 35, // Tempo base para análise com Vertex AI
+  analysisPerMB: 0.05, // Tempo adicional por MB do vídeo
 }
 
 export default function Home() {
@@ -159,9 +159,9 @@ export default function Home() {
         console.log('[DEBUG] URL assinada obtida:', signData.fileName)
         logWithTime('SIGN', 'URL assinada obtida')
 
-        // Fase 2: Upload direto para GCS (5-50%)
+        // Fase 2: Upload direto para GCS (5-20%)
         const uploadTime = fileSizeMB * TIME_ESTIMATES.uploadPerMB
-        startProgressSimulation(5, 50, uploadTime, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
+        startProgressSimulation(5, 20, uploadTime, 'uploading', `Enviando ${fileSizeDisplay}MB...`)
 
         console.log('[DEBUG] Fazendo upload para GCS...')
         abortControllerRef.current = new AbortController()
@@ -185,16 +185,16 @@ export default function Home() {
           clearInterval(progressIntervalRef.current)
         }
 
-        // Fase 3: Análise (50-100%)
+        // Fase 3: Análise (20-98%)
         setStatus('analyzing')
         setUploadProgress({
           stage: 'analyzing',
-          progress: 55,
+          progress: 22,
           message: 'Analisando obstrução...'
         })
 
         const analysisTime = TIME_ESTIMATES.analysisBase + (fileSizeMB * TIME_ESTIMATES.analysisPerMB)
-        startProgressSimulation(55, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
+        startProgressSimulation(22, 98, analysisTime, 'analyzing', 'Analisando obstrução...')
 
         console.log('[DEBUG] Iniciando análise via GCS...')
         logWithTime('ANALYZE', 'Iniciando análise')
