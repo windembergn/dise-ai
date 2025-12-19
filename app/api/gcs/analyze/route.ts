@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Storage } from '@google-cloud/storage'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { VertexAI } from '@google-cloud/vertexai'
 
 export const maxDuration = 300 // 5 minutos
 export const dynamic = 'force-dynamic'
 
-const MODEL_NAME = 'gemini-2.5-pro'
+const MODEL_NAME = 'gemini-2.5-pro-preview-06-05'
 
 export async function POST(request: NextRequest) {
-  const googleApiKey = process.env.GOOGLE_API_KEY
   const serviceAccountJson = process.env.GCS_SERVICE_ACCOUNT
   const bucketName = process.env.GCS_BUCKET_NAME
-
-  if (!googleApiKey) {
-    return NextResponse.json({ success: false, error: 'GOOGLE_API_KEY não configurada' }, { status: 500 })
-  }
 
   if (!serviceAccountJson || !bucketName) {
     return NextResponse.json({ success: false, error: 'Configuração GCS incompleta' }, { status: 500 })
@@ -32,8 +27,10 @@ export async function POST(request: NextRequest) {
 
     console.log('[GCS-ANALYZE] Iniciando análise de:', fileName)
 
-    // Inicializar GCS
+    // Parsear credenciais
     const credentials = JSON.parse(serviceAccountJson)
+
+    // Inicializar GCS para verificar arquivo
     const storage = new Storage({ credentials, projectId: credentials.project_id })
     const bucket = storage.bucket(bucketName)
     const file = bucket.file(fileName)
@@ -44,19 +41,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Arquivo não encontrado no GCS' }, { status: 404 })
     }
 
-    // Gerar URL assinada de leitura (válida por 15 minutos)
-    const [signedUrl] = await file.getSignedUrl({
-      version: 'v4',
-      action: 'read',
-      expires: Date.now() + 15 * 60 * 1000,
+    // URI do arquivo no GCS
+    const gcsUri = `gs://${bucketName}/${fileName}`
+    console.log('[GCS-ANALYZE] URI do arquivo:', gcsUri)
+    console.log('[GCS-ANALYZE] Analisando com Vertex AI (Gemini 2.5 Pro)...')
+
+    // Inicializar Vertex AI com as credenciais do service account
+    const vertexAI = new VertexAI({
+      project: credentials.project_id,
+      location: 'us-central1',
+      googleAuthOptions: {
+        credentials: credentials
+      }
     })
 
-    console.log('[GCS-ANALYZE] URL assinada gerada, enviando para Gemini...')
-    console.log('[GCS-ANALYZE] Analisando com Gemini 2.5 Pro...')
-
-    // Analisar com Gemini
-    const genAI = new GoogleGenerativeAI(googleApiKey)
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME })
+    const model = vertexAI.getGenerativeModel({ model: MODEL_NAME })
 
     const prompt = `Você é um software médico de precisão para análise de DISE (Drug-Induced Sleep Endoscopy).
 
@@ -83,26 +82,38 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem expli
   "analise_clinica": "<resumo clínico integrado>"
 }`
 
-    const result = await model.generateContent([
-      {
-        fileData: {
-          mimeType: mimeType || 'video/mp4',
-          fileUri: signedUrl,
-        },
-      },
-      { text: prompt },
-    ])
+    const result = await model.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          {
+            fileData: {
+              mimeType: mimeType || 'video/mp4',
+              fileUri: gcsUri,
+            },
+          },
+          { text: prompt },
+        ],
+      }],
+    })
 
     console.log('[GCS-ANALYZE] Resposta recebida')
 
     // Verificar bloqueio
-    const candidate = result.response.candidates?.[0]
+    const response = result.response
+    const candidate = response.candidates?.[0]
     if (!candidate || candidate.finishReason === 'SAFETY' || candidate.finishReason === 'OTHER') {
       throw new Error('Vídeo não aceito pelo sistema de análise. Tente outro vídeo.')
     }
 
+    // Extrair texto da resposta (Vertex AI)
+    const textPart = candidate.content?.parts?.find(part => 'text' in part)
+    if (!textPart || !('text' in textPart)) {
+      throw new Error('Resposta inválida do modelo')
+    }
+
     // Parsear resposta
-    let responseText = result.response.text().trim()
+    let responseText = (textPart.text as string).trim()
     if (responseText.startsWith('```json')) responseText = responseText.slice(7)
     else if (responseText.startsWith('```')) responseText = responseText.slice(3)
     if (responseText.endsWith('```')) responseText = responseText.slice(0, -3)
