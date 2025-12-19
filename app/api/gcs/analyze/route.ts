@@ -1,31 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Storage } from '@google-cloud/storage'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { GoogleAIFileManager, FileState } from '@google/generative-ai/server'
-import { writeFile, unlink } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
 
 export const maxDuration = 300 // 5 minutos
 export const dynamic = 'force-dynamic'
 
 const MODEL_NAME = 'gemini-2.5-pro'
-
-async function waitForFileProcessing(
-  fileManager: GoogleAIFileManager,
-  fileName: string,
-  maxAttempts = 120
-): Promise<void> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const file = await fileManager.getFile(fileName)
-    if (file.state === FileState.ACTIVE) return
-    if (file.state === FileState.FAILED) {
-      throw new Error('Falha no processamento do vídeo')
-    }
-    await new Promise(resolve => setTimeout(resolve, 2000))
-  }
-  throw new Error('Timeout aguardando processamento do vídeo')
-}
 
 export async function POST(request: NextRequest) {
   const googleApiKey = process.env.GOOGLE_API_KEY
@@ -40,8 +20,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Configuração GCS incompleta' }, { status: 500 })
   }
 
-  let tempFilePath: string | null = null
-  let geminiFileName: string | null = null
   let gcsFileName: string | null = null
 
   try {
@@ -66,27 +44,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Arquivo não encontrado no GCS' }, { status: 404 })
     }
 
-    console.log('[GCS-ANALYZE] Baixando arquivo do GCS...')
-
-    // Baixar para /tmp
-    const tempFileName = `${Date.now()}-video.mp4`
-    tempFilePath = join(tmpdir(), tempFileName)
-    await file.download({ destination: tempFilePath })
-
-    console.log('[GCS-ANALYZE] Arquivo baixado, enviando para Gemini...')
-
-    // Upload para Gemini File API
-    const fileManager = new GoogleAIFileManager(googleApiKey)
-    const uploadResult = await fileManager.uploadFile(tempFilePath, {
-      mimeType: mimeType || 'video/mp4',
-      displayName: fileName,
+    // Gerar URL assinada de leitura (válida por 15 minutos)
+    const [signedUrl] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 15 * 60 * 1000,
     })
 
-    geminiFileName = uploadResult.file.name
-
-    console.log('[GCS-ANALYZE] Aguardando processamento no Gemini...')
-    await waitForFileProcessing(fileManager, geminiFileName)
-
+    console.log('[GCS-ANALYZE] URL assinada gerada, enviando para Gemini...')
     console.log('[GCS-ANALYZE] Analisando com Gemini 2.5 Pro...')
 
     // Analisar com Gemini
@@ -121,8 +86,8 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem expli
     const result = await model.generateContent([
       {
         fileData: {
-          mimeType: uploadResult.file.mimeType,
-          fileUri: uploadResult.file.uri,
+          mimeType: mimeType || 'video/mp4',
+          fileUri: signedUrl,
         },
       },
       { text: prompt },
@@ -167,29 +132,10 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem expli
     return NextResponse.json({ success: false, error: errorMessage }, { status: 500 })
 
   } finally {
-    // Limpeza
-    const googleApiKey = process.env.GOOGLE_API_KEY
+    // Deletar do GCS após análise
     const serviceAccountJson = process.env.GCS_SERVICE_ACCOUNT
     const bucketName = process.env.GCS_BUCKET_NAME
 
-    // Deletar arquivo temporário
-    if (tempFilePath) {
-      try {
-        await unlink(tempFilePath)
-        console.log('[GCS-ANALYZE] Arquivo temporário removido')
-      } catch { /* ignore */ }
-    }
-
-    // Deletar do Gemini
-    if (geminiFileName && googleApiKey) {
-      try {
-        const fileManager = new GoogleAIFileManager(googleApiKey)
-        await fileManager.deleteFile(geminiFileName)
-        console.log('[GCS-ANALYZE] Arquivo removido do Gemini')
-      } catch { /* ignore */ }
-    }
-
-    // Deletar do GCS
     if (gcsFileName && serviceAccountJson && bucketName) {
       try {
         const credentials = JSON.parse(serviceAccountJson)
