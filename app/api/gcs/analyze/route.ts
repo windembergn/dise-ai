@@ -5,7 +5,7 @@ import { VertexAI } from '@google-cloud/vertexai'
 export const maxDuration = 300 // 5 minutos
 export const dynamic = 'force-dynamic'
 
-const MODEL_NAME = 'gemini-1.5-pro'
+const MODEL_NAME = 'gemini-2.0-flash'
 
 export async function POST(request: NextRequest) {
   const serviceAccountJson = process.env.GCS_SERVICE_ACCOUNT
