@@ -5,7 +5,7 @@ import { VertexAI } from '@google-cloud/vertexai'
 export const maxDuration = 300 // 5 minutos
 export const dynamic = 'force-dynamic'
 
-const MODEL_NAME = 'gemini-2.5-pro-preview-06-05'
+const MODEL_NAME = 'gemini-1.5-pro'
 
 export async function POST(request: NextRequest) {
   const serviceAccountJson = process.env.GCS_SERVICE_ACCOUNT
@@ -126,18 +126,13 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem expli
     return NextResponse.json({ success: true, data: analysisData })
 
   } catch (error) {
-    console.error('[GCS-ANALYZE] Erro:', error)
+    console.error('[GCS-ANALYZE] Erro completo:', error)
+    console.error('[GCS-ANALYZE] Erro message:', error instanceof Error ? error.message : 'Unknown')
+    console.error('[GCS-ANALYZE] Erro stack:', error instanceof Error ? error.stack : 'No stack')
 
     let errorMessage = 'Erro durante a análise'
     if (error instanceof Error) {
-      const msg = error.message.toLowerCase()
-      if (msg.includes('forbidden') || msg.includes('403')) {
-        errorMessage = 'Acesso negado. Verifique as configurações.'
-      } else if (msg.includes('quota')) {
-        errorMessage = 'Limite de uso atingido. Aguarde alguns minutos.'
-      } else {
-        errorMessage = error.message
-      }
+      errorMessage = error.message
     }
 
     return NextResponse.json({ success: false, error: errorMessage }, { status: 500 })
