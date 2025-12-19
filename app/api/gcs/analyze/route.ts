@@ -55,28 +55,49 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    const model = vertexAI.getGenerativeModel({ model: MODEL_NAME })
+    const model = vertexAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: {
+        temperature: 0, // Temperatura 0 para respostas mais consistentes
+        topP: 1,
+        topK: 1,
+      }
+    })
 
     const prompt = `Você é um software médico de precisão para análise de DISE (Drug-Induced Sleep Endoscopy).
 
-Este vídeo mostra um exame de endoscopia da via aérea superior durante sono induzido. Analise o vídeo e identifique o grau de obstrução em cada nível anatômico.
+Analise este vídeo de endoscopia da via aérea superior durante sono induzido. Avalie o GRAU MÁXIMO de obstrução observado em cada nível anatômico durante todo o vídeo.
 
-Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem explicações extras):
+CRITÉRIOS DE AVALIAÇÃO (use consistentemente):
+- 0-25%: Obstrução mínima/ausente (via aérea praticamente livre)
+- 26-50%: Obstrução leve (redução parcial do lúmen)
+- 51-75%: Obstrução moderada (redução significativa do lúmen)
+- 76-100%: Obstrução severa (colapso quase completo ou completo)
+
+PADRÕES DE COLAPSO:
+- Anteroposterior: movimento da parede posterior em direção à anterior
+- Lateral: aproximação das paredes laterais
+- Concêntrico: colapso circular de todas as paredes
+- Ausente: sem colapso significativo observado
+
+Analise TODO o vídeo e identifique o PIOR momento de obstrução em cada nível.
+
+Responda APENAS com JSON válido (sem markdown):
 {
   "velo_palato": {
     "obstrucao_percentual": <número 0-100>,
     "padrao_colapso": "<Anteroposterior|Lateral|Concêntrico|Ausente>",
-    "descricao": "<descrição breve>"
+    "descricao": "<descrição breve do achado>"
   },
   "orofaringe": {
     "obstrucao_percentual": <número 0-100>,
     "padrao_colapso": "<Anteroposterior|Lateral|Concêntrico|Ausente>",
-    "descricao": "<descrição breve>"
+    "descricao": "<descrição breve do achado>"
   },
   "epiglote_base_lingua": {
     "obstrucao_percentual": <número 0-100>,
     "padrao_colapso": "<Anteroposterior|Lateral|Concêntrico|Ausente>",
-    "descricao": "<descrição breve>"
+    "descricao": "<descrição breve do achado>"
   },
   "nivel_confianca": <número 0-100>,
   "analise_clinica": "<resumo clínico integrado>"
